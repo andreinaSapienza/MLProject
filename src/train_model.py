@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
@@ -12,6 +11,9 @@ import os
 # --- CONFIGURAZIONE ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_FILE = os.path.join(BASE_DIR, "data", "final_dataset_windowed.csv")
+# Percorso per il file "segreto" di test finale
+HOLDOUT_FILE = os.path.join(BASE_DIR, "data", "holdout_dataset.csv") 
+
 MODEL_DIR = os.path.join(BASE_DIR, "models")
 MODEL_PATH = os.path.join(MODEL_DIR, "rf_model.pkl")
 SCALER_PATH = os.path.join(MODEL_DIR, "scaler.pkl")
@@ -23,84 +25,69 @@ def train_and_evaluate():
         return
 
     df = pd.read_csv(DATA_FILE)
-    print(f"Totale finestre: {len(df)}")
-    
-    # Controllo distribuzione classi totale
-    print(f"Distribuzione Totale: {df['Label'].value_counts().to_dict()}")
+    print(f"Totale finestre originali: {len(df)}")
 
-    X = df.drop(columns=['Label'])
-    y = df['Label']
-
-    # --- 2. BLOCK-BASED SPLIT (La Soluzione) ---
-    # Creiamo un "Group ID". Ogni 100 righe consecutive sono un gruppo.
-    # Questo mantiene intatta la rolling window locale, ma ci permette di mescolare i gruppi.
+    # --- 2. CREAZIONE HOLDOUT SET (IL CAVEAU) ---
+    # Mettiamo da parte il 10% dei dati per predict.py. 
+    # Usiamo GroupShuffleSplit anche qui per non rompere le finestre temporali.
     BLOCK_SIZE = 100
-    # Esempio: righe 0-99 -> Gruppo 0, righe 100-199 -> Gruppo 1, ecc.
     groups = np.arange(len(df)) // BLOCK_SIZE
     
-    print(f"\nGenerazione blocchi (dimensione {BLOCK_SIZE})...")
+    # Primo split: 90% Training/Dev, 10% Holdout (Segreto)
+    splitter_holdout = GroupShuffleSplit(n_splits=1, test_size=0.10, random_state=999)
+    train_dev_idx, holdout_idx = next(splitter_holdout.split(df, groups=groups))
     
-    # GroupShuffleSplit mescola i gruppi, non le singole righe!
+    df_holdout = df.iloc[holdout_idx]
+    df_working = df.iloc[train_dev_idx] # Questo è quello che useremo per il training
+    
+    # Salviamo il file segreto
+    print(f"\nSalvataggio Holdout Set (Mai visto dal modello): {len(df_holdout)} righe")
+    df_holdout.to_csv(HOLDOUT_FILE, index=False)
+    
+    print(f"Dataset di Lavoro (per Training): {len(df_working)} righe")
+
+    # --- 3. PREPARAZIONE TRAINING ---
+    X = df_working.drop(columns=['Label'])
+    y = df_working['Label']
+    
+    # Ricalcoliamo i gruppi sul nuovo dataset ridotto
+    groups_working = np.arange(len(df_working)) // BLOCK_SIZE
+
+    # --- 4. BLOCK SPLIT (Train vs Validation) ---
+    # Dividiamo il dataset di lavoro: 80% Train, 20% Test (Validation)
     gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-    train_idx, test_idx = next(gss.split(X, y, groups=groups))
+    train_idx, test_idx = next(gss.split(X, y, groups=groups_working))
     
     X_train = X.iloc[train_idx]
     y_train = y.iloc[train_idx]
     X_test = X.iloc[test_idx]
     y_test = y.iloc[test_idx]
 
-    print(f"Training Set: {len(X_train)} righe")
-    print(f"Test Set:     {len(X_test)} righe")
-    
-    # VERIFICA CRUCIALE
-    unique_classes = y_test.unique()
-    print(f"Classi nel Test Set: {unique_classes}")
-    if len(unique_classes) < 2:
-        print("⚠️ ERRORE: Ancora una sola classe nel test set. Il dataset potrebbe essere troppo sbilanciato o ordinato in macro-blocchi enormi.")
-        return
+    print(f"\nTraining Set Reale: {len(X_train)} righe")
+    print(f"Validation Set Reale: {len(X_test)} righe")
 
-    # --- 3. NORMALIZZAZIONE ---
-    print("\n--- Normalizzazione Features ---")
+    # --- 5. NORMALIZZAZIONE ---
+    print("\n--- Normalizzazione ---")
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    # --- 4. ADDESTRAMENTO ---
+    # --- 6. ADDESTRAMENTO ---
     print("\n--- Avvio Addestramento Random Forest ---")
-    clf = RandomForestClassifier(n_estimators=100, 
-                                 random_state=42, 
-                                 n_jobs=-1,
-                                 class_weight='balanced') # Importante per bilanciare le classi
+    clf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1, class_weight='balanced')
     clf.fit(X_train_scaled, y_train)
-    print("Addestramento completato!")
-
-    # --- 5. VALUTAZIONE ---
-    print("\n--- Valutazione sul Test Set (Block-Split) ---")
+    
+    # Valutazione interna
+    print("\n--- Risultati sul Validation Set ---")
     y_pred = clf.predict(X_test_scaled)
-
-    acc = accuracy_score(y_test, y_pred)
-    print(f"Accuratezza: {acc:.4f}")
-
-    print("\nMatrice di Confusione:")
-    print(confusion_matrix(y_test, y_pred))
-
-    print("\nReport Dettagliato:")
     print(classification_report(y_test, y_pred, target_names=['Benign', 'Malicious']))
 
-    # --- 6. SALVATAGGIO ---
+    # --- 7. SALVATAGGIO ---
     if not os.path.exists(MODEL_DIR):
         os.makedirs(MODEL_DIR)
-        
     joblib.dump(clf, MODEL_PATH)
     joblib.dump(scaler, SCALER_PATH)
-    print(f"\n✅ Modello salvato correttamente in {MODEL_DIR}")
-
-    # --- 7. FEATURE IMPORTANCE ---
-    print("\n--- Top 5 Features ---")
-    importances = clf.feature_importances_
-    features_desc = sorted(zip(X.columns, importances), key=lambda x: x[1], reverse=True)
-    for name, imp in features_desc[:5]:
-        print(f"{name:15}: {imp:.4f}")
+    print(f"\n✅ Modello salvato. File segreto creato in: {HOLDOUT_FILE}")
 
 if __name__ == "__main__":
     train_and_evaluate()
