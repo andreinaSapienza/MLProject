@@ -169,28 +169,8 @@ accuracy                             0.99     62,100
 - ✅ **False Positive Rate 0.7%** (eccellente per sistema di alerting)
 - ✅ **99% accuracy** su dati mai visti
 
-## ⚠️ Limitazioni e Lavori Futuri
-
-### Limitazioni Attuali
-1. **Recall 92%**: 8% di attacchi non rilevati
-   - 428 falsi negativi su 5,400 attacchi
-   - Critico per sistemi di sicurezza real-time
-2. **Dataset specifico**: Testato solo su Raspberry Pi del paper
-3. **Feature limitate**: Solo statistiche temporali/dimensionali
-
-### Miglioramenti Proposti
-1. **Threshold Tuning**: Abbassare soglia decisionale per recall 95%+
-2. **Feature Engineering**: 
-   - Burst detection (pacchetti ravvicinati)
-   - Periodicità (pattern ciclici del mining)
-   - Rapporti dimensionali (max/min)
-3. **Ensemble Methods**: Combinare RF con XGBoost/SVM
-4. **Test Esterni**: Validare su CICIoT2023 o N-BaIoT datasets
-
-## 📚 Dataset Originale
-
 Basato sul paper:
-- **Titolo:** IoT Cryptomining Detection  
+- **Titolo:** "IoT Lightweight IoT Cryptojacking Detection Mechanism in Heterogeneous Smart Home Networks"
 - **Device:** Raspberry Pi 3B+
 - **Attacchi:** 
   - Webmine (browser-based cryptomining)
@@ -199,8 +179,8 @@ Basato sul paper:
 
 ## 👤 Autore
 
-Progetto di Machine Learning - Sapienza Università di Roma  
-Anno Accademico: 2024/2025
+Progetto di Machine Learning Security - Sapienza Università di Roma  
+Anno Accademico: 2025/2026
 
 ## 📄 Licenza
 
@@ -208,8 +188,7 @@ Progetto accademico - Uso educativo
 
 ## 🙏 Ringraziamenti
 
-- Dataset: Paper originale su IoT Security
-- Supervisione: Prof. [Nome Docente]
+- Datasets: https://drive.google.com/drive/folders/13kNRyCuGOoRZ2BrBXoNvRnSnivq6_y4h?usp=sharing
 - Tools: scikit-learn, pandas
 
 ---
